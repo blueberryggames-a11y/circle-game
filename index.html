@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Duel Circle</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b0b0c;color:#eee;font:15px system-ui,sans-serif}
+#app{max-width:560px;margin:auto;padding:12px}
+.card,.row{background:#161514;border-radius:12px;padding:12px;margin:8px 0}
+.row{display:flex;align-items:center;gap:10px}.row>span,.sp{margin-left:auto}
+h1{margin:20px 0 4px;font-size:30px}.mut{color:#999}.c{text-align:center}
+button{background:#2a2826;color:#eee;border:0;border-radius:8px;padding:9px 13px;font:inherit;cursor:pointer}
+button.on{background:#ff5d73;color:#fff}button.go{background:#4fd1c5;color:#062}
+input{background:#0b0b0c;color:#eee;border:1px solid #333;border-radius:8px;padding:9px;font:inherit;width:100%;margin:4px 0}
+.err{color:#ff7a8a}.code{font-size:26px;letter-spacing:4px;color:#ffd166}
+.dot{display:inline-block;border-radius:50%;background:var(--c);position:relative;width:26px;height:26px;vertical-align:middle}
+.dot.sm{width:18px;height:18px}.dot.big{width:46px;height:46px}
+.board{position:relative;width:100%;aspect-ratio:1;background:#0b0b0c;border-radius:10px}
+.cell{position:absolute;width:calc(11.111% - 6px);height:calc(11.111% - 6px);margin:3px;background:#1f1d1a;border-radius:6px}
+.home{background:var(--c);opacity:.4}
+.ok{cursor:pointer;background:#2c2a27}.ok::after{content:"";position:absolute;inset:38%;border-radius:50%;background:#fff6}
+.pawn{position:absolute;width:6.8%;transform:translate(-50%,-50%);transition:left .25s,top .25s;z-index:3}
+.me{outline:2px solid #fff8;outline-offset:3px}
+.wall{position:absolute;border-radius:5px;background:var(--c);z-index:2;box-shadow:0 0 6px var(--c)}
+.z{position:absolute;z-index:4;cursor:pointer}
+.z i{position:absolute;opacity:0;background:#fff;border-radius:5px}.z:hover i{opacity:.55}
+.zh i{left:-50%;width:200%;top:3px;bottom:3px}.zv i{top:-50%;height:200%;left:3px;right:3px}
+.gl{box-shadow:0 0 14px 3px var(--c)}
+.rb{background:linear-gradient(90deg,#f33,#fc3,#3f6,#3cf,#93f,#f3c,#f33);background-size:300% 100%;animation:rbm 3s linear infinite,hue 3s linear infinite;box-shadow:0 0 14px #f0f}
+.lg{background:linear-gradient(90deg,#000,#fff,#000);background-size:200% 100%;animation:lgm 2.5s linear infinite;box-shadow:0 0 14px #fff}
+.lg::after{content:"L Get good";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:800 clamp(4px,1.3vw,7px)/1 system-ui;white-space:nowrap;color:#fff;mix-blend-mode:difference;animation:pl 1.2s ease-in-out infinite alternate}
+.wall.v.lg::after{writing-mode:vertical-rl}
+.cell.lg::after,.sm.lg::after{content:none}.big.lg::after{font-size:8px}
+.cell.gl{box-shadow:none}
+@keyframes rbm{to{background-position:300% 0}}@keyframes lgm{to{background-position:200% 0}}
+@keyframes hue{to{filter:hue-rotate(360deg)}}@keyframes pl{from{opacity:.4;letter-spacing:0}to{opacity:1;letter-spacing:.5px}}
+@media(prefers-reduced-motion:reduce){.rb,.lg,.lg::after{animation:none}}
+</style></head><body><div id="app"></div>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getDatabase,ref,get,set,update,onValue,runTransaction,remove,query,orderByChild,limitToLast,onDisconnect} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+const app=initializeApp({
+  apiKey:"AIzaSyCK5DUTSjHkCjSxa5pIirke4SIBCzxPHlw",
+  authDomain:"duelcircething.firebaseapp.com",
+  databaseURL:"https://duelcircething-default-rtdb.firebaseio.com", // change if your RTDB URL differs
+  projectId:"duelcircething",storageBucket:"duelcircething.firebasestorage.app",
+  messagingSenderId:"341684765583",appId:"1:341684765583:web:af832eb59528615c1341fa"});
+const auth=getAuth(app),db=getDatabase(app);
+
+const ADMIN="30copallock@pulaskischools.org";
+const SK=[
+ {id:'red',n:'Classic Red',c:'#ff5d73',p:0},{id:'teal',n:'Teal',c:'#4fd1c5',p:0},
+ {id:'sun',n:'Sunny',c:'#ffd166',p:50},{id:'vio',n:'Violet',c:'#b794f6',p:50},
+ {id:'lime',n:'Lime',c:'#9be15d',p:75},{id:'ora',n:'Orange',c:'#ff9f43',p:75},
+ {id:'npink',n:'Neon Pink',c:'#ff4fd8',p:150,g:1},{id:'ice',n:'Ice Glow',c:'#5ad1ff',p:150,g:1},
+ {id:'grn',n:'Matrix Glow',c:'#39ff88',p:200,g:1},{id:'gold',n:'Gold Glow',c:'#ffd700',p:250,g:1},
+ {id:'rainbow',n:'Rainbow (Admin)',c:'#f0f',p:0,a:1},{id:'lget',n:'L Get good (Admin)',c:'#fff',p:0,a:1}];
+const S=Object.fromEntries(SK.map(s=>[s.id,s]));
+const $=s=>document.querySelector(s);
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let user,me,view='auth',tab='play',lobby={},room,code,my=0,mode='move',cheat=false,paid=false,mAuth='in',err='',unU,unL,unR;
+const isAdm=()=>user&&user.email.toLowerCase()===ADMIN;
+const cls=id=>id=='rainbow'?'rb':id=='lget'?'lg':S[id].g?'gl':'';
+const dot=(id,x='',st='')=>`<div class="dot ${cls(id)} ${x}" style="--c:${S[id].c};${st}"></div>`;
+const mySkin=()=>S[me.eq]&&(!S[me.eq].a||isAdm())?me.eq:'red';
+const who=()=>({uid:user.uid,name:me.name,skin:mySkin()});
+const goal=p=>p?0:8, D=[[1,0],[-1,0],[0,1],[0,-1]];
+
+/* ---------- rules ---------- */
+const has=(W,k)=>W&&W[k];
+function blk(W,r,c,dr,dc){
+  if(dr){const a=dr>0?r:r-1;return has(W,`h${a}_${c}`)||has(W,`h${a}_${c-1}`)}
+  const b=dc>0?c:c-1;return has(W,`v${r}_${b}`)||has(W,`v${r-1}_${b}`)}
+function legal(R,p){const a=R.pos[p],o=R.pos[1-p],W=R.w||{},m=[];
+  for(const[d,e]of D){const r=a.r+d,c=a.c+e;
+    if(r<0||r>8||c<0||c>8||blk(W,a.r,a.c,d,e)||(o.r==r&&o.c==c))continue;m.push([r,c])}return m}
+function path(W,p,g){const q=[[p.r,p.c]],s=new Set([p.r+','+p.c]);
+  while(q.length){const[r,c]=q.shift();if(r==g)return 1;
+    for(const[d,e]of D){const R=r+d,C=c+e;if(R<0||R>8||C<0||C>8||s.has(R+','+C)||blk(W,r,c,d,e))continue;s.add(R+','+C);q.push([R,C])}}return 0}
+function okWall(W,o,r,c){
+  if(has(W,o+r+'_'+c)||has(W,(o=='h'?'v':'h')+r+'_'+c))return 0;
+  const[a,b]=o=='h'?[`h${r}_${c-1}`,`h${r}_${c+1}`]:[`v${r-1}_${c}`,`v${r+1}_${c}`];
+  return !(has(W,a)||has(W,b))}
+
+/* ---------- auth ---------- */
+window.sw=()=>{mAuth=mAuth=='in'?'up':'in';err='';render()};
+window.go=async()=>{err='';const e=$('#em').value.trim(),p=$('#pw').value;
+  try{if(mAuth=='up'){const n=$('#nm').value.trim().slice(0,14);if(n.length<2)throw Error('Pick a username (2+ characters).');
+      const c=await createUserWithEmailAndPassword(auth,e,p);
+      await set(ref(db,'users/'+c.user.uid),{name:n,coins:100,wins:0,skins:{red:1,teal:1},eq:'red'})}
+    else await signInWithEmailAndPassword(auth,e,p)}
+  catch(x){err=x.message.replace('Firebase: ','');render()}};
+window.so=()=>{leaveQuiet();signOut(auth)};
+onAuthStateChanged(auth,u=>{user=u;unU&&unU();unL&&unL();
+  if(!u){me=null;view='auth';render();return}
+  unU=onValue(ref(db,'users/'+u.uid),s=>{me=s.val();if(view=='auth')view='menu';if(view!='game')render()});
+  unL=onValue(ref(db,'lobby'),s=>{lobby=s.val()||{};const l=$('#lob');if(l)l.innerHTML=lobH()})});
+
+/* ---------- rooms ---------- */
+window.mk=async pub=>{const c=Math.random().toString(36).slice(2,7).toUpperCase();
+  await set(ref(db,'rooms/'+c),{pub:pub?1:0,status:'waiting',turn:0,p:{0:who()},pos:{0:{r:0,c:4},1:{r:8,c:4}},wl:{0:8,1:8}});
+  if(pub){const l=ref(db,'lobby/'+c);await set(l,{name:me.name});onDisconnect(l).remove()}
+  enter(c,0)};
+window.jn=async c=>{c=(c||$('#jc').value).trim().toUpperCase();if(!c)return;let ok=0;
+  try{const x=await runTransaction(ref(db,'rooms/'+c),r=>{if(!r)return r;
+      if(r.status!='waiting'||(r.p||[])[1]||r.p[0].uid==user.uid)return;
+      r.p[1]=who();r.status='playing';return r});ok=x.committed&&x.snapshot.exists()}catch(e){}
+  if(!ok)return alert('Room not found, already full, or it is your own room.');
+  remove(ref(db,'lobby/'+c));enter(c,1)};
+function enter(c,p){code=c;my=p;view='game';mode='move';cheat=false;paid=false;
+  unR=onValue(ref(db,'rooms/'+c),s=>{
+    if(!s.exists()){unR&&unR();view='menu';room=null;render();return}
+    room=s.val();
+    if(room.status=='done'&&!paid){paid=true;const w=room.winner==my;
+      runTransaction(ref(db,'users/'+user.uid),u=>{if(!u)return u;u.coins=(u.coins||0)+(w?25:5);if(w)u.wins=(u.wins||0)+1;return u})}
+    render()});render()}
+async function leaveQuiet(){if(!room)return;
+  if(room.status=='playing')await update(ref(db,'rooms/'+code),{status:'done',winner:1-my});
+  else if(room.status=='waiting'){remove(ref(db,'rooms/'+code));remove(ref(db,'lobby/'+code))}
+  unR&&unR();room=null}
+window.lv=async()=>{await leaveQuiet();view='menu';render()};
+async function act(fn){await runTransaction(ref(db,'rooms/'+code),r=>{
+  if(!r)return r;if(r.status!='playing'||r.turn!=my)return;r.w=r.w||{};
+  if(fn(r)===false)return;r.turn=1-my;return r})}
+window.mv=(r,c)=>act(R=>{if(!legal(R,my).some(m=>m[0]==r&&m[1]==c))return false;
+  R.pos[my]={r,c};if(r==goal(my)){R.status='done';R.winner=my}});
+window.wl=(o,r,c)=>act(R=>{
+  if(!cheat&&R.wl[my]<1)return false;if(!okWall(R.w,o,r,c))return false;
+  const W={...R.w,[o+r+'_'+c]:1};if(!path(W,R.pos[0],8)||!path(W,R.pos[1],0))return false;
+  R.w[o+r+'_'+c]={p:my,rb:cheat?1:0};if(!cheat)R.wl[my]--});
+window.md=m=>{mode=m;render()};
+window.ch=()=>{if(isAdm()){cheat=!cheat;render()}};
+
+/* ---------- shop / leaderboard ---------- */
+window.buy=id=>runTransaction(ref(db,'users/'+user.uid),u=>{if(!u)return u;const s=S[id];
+  if((u.coins||0)<s.p||(u.skins||{})[id])return;u.coins-=s.p;u.skins=u.skins||{};u.skins[id]=1;u.eq=id;return u});
+window.eqp=id=>update(ref(db,'users/'+user.uid),{eq:id});
+async function lb(){const s=await get(query(ref(db,'users'),orderByChild('wins'),limitToLast(10)));const a=[];
+  s.forEach(c=>{a.push(c.val())});a.reverse();const e=$('#lbl');if(!e)return;
+  e.innerHTML=a.map((u,i)=>`<div class="row"><b>${i+1}</b>${dot(S[u.eq]?u.eq:'red','sm')}${esc(u.name)}<span>${u.wins||0} wins</span></div>`).join('')||'<p class="mut">No wins yet. Be the first.</p>'}
+
+/* ---------- views ---------- */
+window.tb=t=>{tab=t;render()};
+const top=()=>`<div class="row">${dot(mySkin(),'sm')}<b>${esc(me.name)}</b><span>🪙 ${me.coins||0} Coins · ${me.wins||0} wins</span><button onclick="so()">Log out</button></div>
+<div class="row">${['play','shop','lb'].map(t=>`<button class="${tab==t?'on':''}" onclick="tb('${t}')">${{play:'Play',shop:'Skins',lb:'Leaderboard'}[t]}</button>`).join('')}</div>`;
+const authH=()=>`<h1>Duel Circle</h1><p class="mut">Cross the board to your rival's colored row first.</p><div class="card">
+${mAuth=='up'?'<input id="nm" placeholder="Username" maxlength="14">':''}<input id="em" type="email" placeholder="Email"><input id="pw" type="password" placeholder="Password (6+ characters)">
+<p class="err">${esc(err)}</p><button class="go" onclick="go()">${mAuth=='up'?'Create account':'Log in'}</button>
+<button onclick="sw()">${mAuth=='up'?'I have an account':'New here? Sign up (100 free Coins)'}</button></div>`;
+const lobH=()=>Object.entries(lobby).filter(([c])=>!room).map(([c,l])=>`<div class="row">${esc(l.name)}'s room<span>${c}</span><button class="go" onclick="jn('${c}')">Join</button></div>`).join('')||'<p class="mut">No public rooms right now. Create one.</p>';
+const playH=()=>`<div class="card"><button class="go" onclick="mk(1)">Create public room</button> <button onclick="mk(0)">Create private room</button></div>
+<div class="card"><b>Join with a code</b><input id="jc" placeholder="ABCDE" maxlength="5"><button class="go" onclick="jn()">Join room</button></div>
+<div class="card"><b>Public lobbies</b><div id="lob">${lobH()}</div></div>`;
+const shopH=()=>SK.filter(s=>!s.a||isAdm()).map(s=>{const own=(me.skins||{})[s.id]||s.a;
+  return `<div class="row">${dot(s.id,'big')}<div><b>${s.n}</b><br><span class="mut">${s.a?'Admin only':s.p?s.p+' Coins':'Free'}</span></div>
+  <span>${me.eq==s.id?'<button class="on">Equipped</button>':own?`<button onclick="eqp('${s.id}')">Equip</button>`:`<button class="go" ${(me.coins||0)<s.p?'disabled':''} onclick="buy('${s.id}')">Buy</button>`}</span></div>`}).join('');
+
+function gameH(){const R=room,P=100/9,pl=R.p||[],w=R.w||{},pos=R.pos,wl=R.wl||[8,8];
+  const t=R.status=='playing'&&R.turn==my,lg=t&&mode=='move'?legal(R,my):[];let b='';
+  for(let r=0;r<9;r++)for(let c=0;c<9;c++){const hm=r==0?0:r==8?1:-1,sk=hm>=0?(pl[hm]?pl[hm].skin:hm?'teal':'red'):'';
+    const ok=lg.some(m=>m[0]==r&&m[1]==c);
+    b+=`<div class="cell ${hm>=0?'home '+cls(sk):''} ${ok?'ok':''}" style="left:${c*P}%;top:${r*P}%;${hm>=0?'--c:'+S[sk].c:''}" ${ok?`onclick="mv(${r},${c})"`:''}></div>`}
+  for(const k in w){const o=k[0],[r,c]=k.slice(1).split('_').map(Number),v=w[k],sk=pl[v.p]?pl[v.p].skin:'red';
+    b+=`<div class="wall ${o} ${v.rb?'rb':cls(sk)}" style="--c:${S[sk].c};${o=='h'?`left:calc(${c*P}% + 4px);top:calc(${(r+1)*P}% - 5px);width:calc(${2*P}% - 8px);height:10px`:`left:calc(${(c+1)*P}% - 5px);top:calc(${r*P}% + 4px);width:10px;height:calc(${2*P}% - 8px)`}"></div>`}
+  if(t&&mode!='move')for(let r=0;r<8;r++)for(let c=0;c<8;c++)
+    b+=mode=='h'?`<div class="z zh" onclick="wl('h',${r},${c})" style="left:${(c+.5)*P}%;top:calc(${(r+1)*P}% - 8px);width:${P}%;height:16px"><i></i></div>`
+      :`<div class="z zv" onclick="wl('v',${r},${c})" style="left:calc(${(c+1)*P}% - 8px);top:${(r+.5)*P}%;width:16px;height:${P}%"><i></i></div>`;
+  [0,1].forEach(i=>{if(!pl[i])return;const s=pl[i].skin;b+=dot(s,'pawn '+(i==my?'me':''),`left:${(pos[i].c+.5)*P}%;top:${(pos[i].r+.5)*P}%`)});
+  const st=R.status=='waiting'?`Waiting for an opponent. Room code <b class="code">${code}</b>`:R.status=='done'?(R.winner==my?'🏆 You win! +25 Coins':'You lost. +5 Coins'):t?'Your turn: move or place a wall':"Opponent's turn";
+  const nm=i=>pl[i]?`${dot(pl[i].skin,'sm')} ${esc(pl[i].name)}${i==my?' (you)':''}`:'…';
+  const cB=isAdm()?`<button class="${cheat?'on':''}" onclick="ch()">🌈 Cheat ${cheat?'ON':'OFF'}</button>`:'';
+  return `<div class="card"><div>${st}</div><div class="mut">${nm(0)} 🧱${cheat&&my==0?'∞':wl[0]} &nbsp;vs&nbsp; ${nm(1)} 🧱${cheat&&my==1?'∞':wl[1]}</div></div>
+  <div class="board">${b}</div>
+  <div class="row"><button class="${mode=='move'?'on':''}" onclick="md('move')">Move</button><button class="${mode=='h'?'on':''}" onclick="md('h')">Wall ━</button><button class="${mode=='v'?'on':''}" onclick="md('v')">Wall ┃</button>${cB}<button class="sp" onclick="lv()">${R.status=='done'?'Back':'Leave'}</button></div>`}
+
+function render(){const a=$('#app');
+  if(view=='auth'||!user)a.innerHTML=authH();
+  else if(!me)a.innerHTML='<p class="c mut">Loading…</p>';
+  else if(view=='game'&&room)a.innerHTML=gameH();
+  else{a.innerHTML=top()+(tab=='play'?playH():tab=='shop'?shopH():'<div class="card" id="lbl">Loading…</div>');if(tab=='lb')lb()}}
+render();
+</script></body></html>
